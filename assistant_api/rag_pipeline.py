@@ -5,6 +5,7 @@
 
 from typing import Dict, Any, List
 import os
+from pathlib import Path
 from openai import OpenAI
 
 from vector_store import VectorStore
@@ -13,11 +14,11 @@ from cache import RAGCache
 
 class RAGPipeline:
     """Основной pipeline для RAG системы в API режиме."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  collection_name: str = "rag_collection",
                  cache_db_path: str = "rag_cache.db",
-                 data_file: str = "data/docs.txt",
+                 data_file: str = "data",
                  model: str = "gpt-4o-mini"):
         """
         Инициализация RAG pipeline.

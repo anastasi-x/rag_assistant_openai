@@ -7,6 +7,7 @@ datasets>=2.14.0
 sentence-transformers>=2.2.0
 python-dotenv>=1.0.0
 pysbd>=0.3.4
+pypdf>=4.0.0
 
 # Совместимые версии для Python 3.11 и RAGAS
 pydantic>=2.0.0,<3.0.0

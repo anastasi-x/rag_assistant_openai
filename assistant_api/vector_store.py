@@ -10,7 +10,7 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
-
+from pypdf import PdfReader
 
 env_path = Path(__file__).parent.parent / '.env'
 if env_path.exists():
@@ -205,55 +205,140 @@ class VectorStore:
             chunks.append(current_chunk)
         
         return chunks
-    
+
+    def _read_text_file(self, file_path: str) -> str:
+        """
+        Чтение обычного текстового файла.
+        Подходит для .txt, .md, .csv, .html.
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def _read_pdf_file(self, file_path: str) -> str:
+        """
+        Извлечение текста из PDF-файла.
+        """
+        reader = PdfReader(file_path)
+        pages_text = []
+
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                pages_text.append(text)
+
+        return "\n\n".join(pages_text)
+
+    def _read_document(self, file_path: str) -> str:
+        """
+        Чтение документа в зависимости от расширения файла.
+        """
+        extension = Path(file_path).suffix.lower()
+
+        if extension in [".txt", ".md", ".csv", ".html"]:
+            return self._read_text_file(file_path)
+
+        if extension == ".pdf":
+            return self._read_pdf_file(file_path)
+
+        raise ValueError(f"Неподдерживаемый формат файла: {extension}")
+
+    def _get_supported_files(self, path: str) -> List[str]:
+        """
+        Получение списка поддерживаемых файлов.
+        Можно передать путь к одному файлу или к папке.
+        """
+        supported_extensions = {".txt", ".md", ".csv", ".html", ".pdf"}
+
+        if os.path.isfile(path):
+            return [path] if Path(path).suffix.lower() in supported_extensions else []
+
+        if os.path.isdir(path):
+            files = []
+            for file_name in os.listdir(path):
+                file_path = os.path.join(path, file_name)
+                if os.path.isfile(file_path) and Path(file_path).suffix.lower() in supported_extensions:
+                    files.append(file_path)
+
+            return sorted(files)
+
+        return []
+
     def load_documents(self, file_path: str):
         """
-        Загрузка документов из файла в векторное хранилище.
-        
+        Загрузка документов из файла или папки в векторное хранилище.
+
+        Поддерживаются форматы:
+        - .txt
+        - .md
+        - .csv
+        - .html
+        - .pdf
+
         Args:
-            file_path: путь к файлу с документами
+            file_path: путь к файлу или папке с документами
         """
-        # Проверка существования файла
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл {file_path} не найден")
-        
-        # Чтение файла
-        with open(file_path, 'r', encoding='utf-8') as f:
-            text = f.read()
-        
-        # Разбиение на чанки
-        chunks = self._chunk_text(text)
-        print(f"Текст разбит на {len(chunks)} чанков")
-        
+            raise FileNotFoundError(f"Путь {file_path} не найден")
+
         # Проверка, не загружены ли уже документы
         if self.collection.count() > 0:
             print("Документы уже загружены в коллекцию")
             return
-        
-        # Создание embeddings и добавление в ChromaDB
+
+        files = self._get_supported_files(file_path)
+
+        if not files:
+            raise ValueError(
+                f"В папке или файле {file_path} не найдено поддерживаемых документов"
+            )
+
+        print(f"Найдено файлов для загрузки: {len(files)}")
+
         documents = []
         ids = []
         embeddings = []
-        
-        for i, chunk in enumerate(chunks):
-            # Создание embedding через OpenAI
-            embedding = self._create_embedding(chunk)
-            
-            documents.append(chunk)
-            ids.append(f"doc_{i}")
-            embeddings.append(embedding)
-            
-            if (i + 1) % 10 == 0:
-                print(f"Обработано {i + 1}/{len(chunks)} чанков")
-        
-        # Добавление в ChromaDB батчами
+        metadatas = []
+
+        for file_index, current_file_path in enumerate(files):
+            print(f"\nЧтение файла: {current_file_path}")
+
+            text = self._read_document(current_file_path)
+
+            if not text.strip():
+                print(f"Файл пропущен, текст не найден: {current_file_path}")
+                continue
+
+            chunks = self._chunk_text(text)
+            print(f"Файл разбит на {len(chunks)} чанков")
+
+            source_name = os.path.basename(current_file_path)
+            file_type = Path(current_file_path).suffix.lower()
+
+            for chunk_index, chunk in enumerate(chunks):
+                embedding = self._create_embedding(chunk)
+
+                documents.append(chunk)
+                ids.append(f"doc_{file_index}_{chunk_index}")
+                embeddings.append(embedding)
+                metadatas.append({
+                    "source": source_name,
+                    "file_type": file_type
+                })
+
+                if len(documents) % 10 == 0:
+                    print(f"Обработано {len(documents)} чанков")
+
+        if not documents:
+            raise ValueError("Не удалось извлечь текст ни из одного документа")
+
         self.collection.add(
             documents=documents,
             embeddings=embeddings,
-            ids=ids
+            ids=ids,
+            metadatas=metadatas
         )
-        
-        print(f"Загружено {len(chunks)} документов в коллекцию '{self.collection_name}'")
+
+        print(f"\nЗагружено {len(documents)} чанков в коллекцию '{self.collection_name}'")
     
     def _create_embedding(self, text: str) -> List[float]:
         """
@@ -274,33 +359,37 @@ class VectorStore:
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
         Поиск релевантных документов по запросу.
-        
+
         Args:
             query: текст запроса
             top_k: количество документов для возврата
-            
+
         Returns:
-            список документов с метаданными
+            список документов с текстом, метаданными и расстоянием
         """
-        # Создание embedding для запроса
         query_embedding = self._create_embedding(query)
-        
-        # Поиск в ChromaDB
+
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k
         )
-        
-        # Форматирование результатов
+
         documents = []
-        if results['documents'] and len(results['documents']) > 0:
-            for i in range(len(results['documents'][0])):
+
+        if results["documents"] and len(results["documents"]) > 0:
+            for i in range(len(results["documents"][0])):
+                metadata = None
+
+                if results.get("metadatas") and results["metadatas"][0]:
+                    metadata = results["metadatas"][0][i]
+
                 documents.append({
-                    'id': results['ids'][0][i],
-                    'text': results['documents'][0][i],
-                    'distance': results['distances'][0][i] if 'distances' in results else None
+                    "id": results["ids"][0][i],
+                    "text": results["documents"][0][i],
+                    "metadata": metadata,
+                    "distance": results["distances"][0][i] if "distances" in results else None
                 })
-        
+
         return documents
     
     def get_collection_stats(self) -> Dict[str, Any]:

@@ -114,7 +114,7 @@ def main():
         pipeline = RAGPipeline(
             collection_name="api_rag_collection",
             cache_db_path="api_rag_cache.db",
-            data_file="data/docs.txt",
+            data_file="data",
             model="gpt-4o-mini"
         )
         print("\n✅ Система готова к работе!\n")
