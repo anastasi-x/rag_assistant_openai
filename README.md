@@ -75,4 +75,5 @@ python app.py
 * ChromaDB
 * SQLite
 * RAG Pipeline
-* RAGAS
+
+Дополнительно в проекте есть файл `evaluate_ragas.py` для оценки качества ответов через RAGAS.
