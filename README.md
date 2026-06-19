@@ -123,3 +123,17 @@ python app.py
 * RAG Pipeline
 
 Дополнительно в проекте есть файл `evaluate_ragas.py` для оценки качества ответов через RAGAS.
+
+## Демонстрация работы
+
+### Ответ на основе документов через OpenAI API
+
+![Ответ RAG-ассистента через OpenAI API](docs/screenshots/api-response.png)
+
+### Получение повторного ответа из кэша
+
+![Ответ RAG-ассистента из кэша](docs/screenshots/cache-response.png)
+
+### Статистика системы
+
+![Статистика RAG-системы](docs/screenshots/system-stats.png)
